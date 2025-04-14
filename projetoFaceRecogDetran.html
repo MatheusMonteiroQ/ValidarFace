@@ -1095,6 +1095,8 @@ function calculateRegionBrightness(imageData) {
 
             const face = azureResult[0];
             const attributes = face.faceAttributes;
+            const backgroundValidation = await validateWhiteBackground(blob, face.faceRectangle);
+
             const issues = [];
 
             // 1. Qualidade básica
@@ -1139,7 +1141,9 @@ function calculateRegionBrightness(imageData) {
                 Math.abs(attributes.headPose.pitch) > 15) {
                 issues.push("Rosto não está frontal à câmera");
             }
-
+            if (!backgroundValidation.isWhite) {
+                issues.push(`Fundo não é branco (${backgroundValidation.whitePercentage.toFixed(1)}% de pixels brancos)`);
+            }
             return {
                 isValid: issues.length === 0,
                 issues: issues,
@@ -1376,6 +1380,79 @@ function calculateRegionBrightness(imageData) {
                 return 'center'; // Posição normal
             }
         }
+
+        // Adicione esta função ao seu código
+async function validateWhiteBackground(blob, faceRectangle) {
+    const img = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    
+    // Definir margem ao redor do rosto para análise
+    const margin = 20;
+    
+    // Área a ser analisada (toda a imagem exceto a área do rosto com margem)
+    const backgroundArea = {
+        x: 0,
+        y: 0,
+        width: canvas.width,
+        height: canvas.height,
+        exclude: {
+            x: Math.max(0, faceRectangle.left - margin),
+            y: Math.max(0, faceRectangle.top - margin),
+            width: Math.min(canvas.width, faceRectangle.width + margin * 2),
+            height: Math.min(canvas.height, faceRectangle.height + margin * 2)
+        }
+    };
+    
+    // Analisar pixels do fundo
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const backgroundPixels = getBackgroundPixels(imageData, backgroundArea);
+    
+    // Calcular porcentagem de pixels brancos
+    const whiteThreshold = 230; // Valor RGB mínimo para considerar como "branco" (0-255)
+    let whitePixels = 0;
+    
+    for (let i = 0; i < backgroundPixels.length; i += 4) {
+        if (backgroundPixels[i] > whiteThreshold &&     // R
+            backgroundPixels[i+1] > whiteThreshold &&   // G
+            backgroundPixels[i+2] > whiteThreshold) {   // B
+            whitePixels++;
+        }
+    }
+    
+    const whitePercentage = (whitePixels / (backgroundPixels.length / 4)) * 100;
+    
+    // Considerar como fundo branco se pelo menos 85% dos pixels forem brancos
+    return {
+        isWhite: whitePercentage >= 85,
+        whitePercentage: whitePercentage
+    };
+}
+
+// Função auxiliar para obter pixels do fundo
+function getBackgroundPixels(imageData, area) {
+    const pixels = [];
+    const data = imageData.data;
+    
+    for (let y = 0; y < area.height; y++) {
+        for (let x = 0; x < area.width; x++) {
+            // Pular área do rosto
+            if (x >= area.exclude.x && x < area.exclude.x + area.exclude.width &&
+                y >= area.exclude.y && y < area.exclude.y + area.exclude.height) {
+                continue;
+            }
+            
+            const idx = (y * imageData.width + x) * 4;
+            pixels.push(data[idx], data[idx+1], data[idx+2], data[idx+3]);
+        }
+    }
+    
+    return pixels;
+}
 
     </script>
 </body>
