@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validação Concluída - Detran</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="index.css"> <!-- Usando o mesmo CSS da tela inicial -->
+    <style>
+        /* Estilos adicionais específicos para esta tela */
+        .success-icon {
+            font-size: 4rem;
+            color: #4CAF50;
+            margin-bottom: 1.5rem;
+        }
+        
+        .success-message {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            text-align: center;
+            line-height: 1.6;
+        }
+        
+        .btn-return {
+            background: var(--detran-blue);
+            color: white;
+            border: none;
+            padding: 1rem 2.5rem;
+            font-size: 1.1rem;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0, 74, 141, 0.3);
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.8rem;
+            margin-top: 1rem;
+        }
+        
+        .btn-return:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0, 74, 141, 0.4);
+            background: var(--detran-dark-blue);
+        }
+    </style>
+</head>
+
+<body>
+    <header class="welcome-header">
+        <div class="header-content">
+            <h1>Sistema de Validação Facial</h1>
+        </div>
+    </header>
+
+    <main class="welcome-container">
+        <div class="welcome-card">
+            <!-- Ícone de sucesso -->
+            <div class="success-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+                </svg>
+            </div>
+            
+            <h2 class="welcome-title">Validação Concluída!</h2>
+            
+            <p class="success-message">
+                Sua foto foi enviada com sucesso para validação.<br>
+                O processo de verificação será concluído em breve.<br>
+                Você receberá uma confirmação por e-mail.
+            </p>
+            
+            <button class="btn-return" onclick="location.href='index.html'">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"/>
+                </svg>
+                Voltar ao Início
+            </button>
+        </div>
+    </main>
+
+    <footer class="welcome-footer">
+        <p>© 2023 DETRN - Departamento Estadual de Trânsito</p>
+        <p>Sistema de Validação Segura - Versão 1.0</p>
+    </footer>
+</body>
+
+</html>
