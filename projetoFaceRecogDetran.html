@@ -70,8 +70,10 @@
                     </button>
                 </div>
 
-                <div id="results" class="preview-container"></div>
-                <div id="validationResults"></div>
+                <div id="results" class="preview-container">
+                    <img id="previewImg" style="display: none; max-width: 100%; border-radius: 8px;">
+                    <div id="validationResults"></div>
+                </div>
             </div>
         </div>
     </main>
@@ -84,7 +86,7 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
     <script>
         // Esperar o DOM carregar completamente
         document.addEventListener('DOMContentLoaded', async function () {
@@ -100,6 +102,9 @@
             const motionWarning = document.getElementById('motionWarning');
             const mensagemMovimentoContainer = document.getElementById('mensagemMovimentoContainer');
             const cameraContainer = document.getElementById('cameraContainer');
+            let selfieSegmentation;
+            let mediaStream = null;
+            let isCameraActive = false;
 
             const AZURE_CONFIG = {
                 endpoint: "https://faceapiazureex.cognitiveservices.azure.com",
@@ -125,6 +130,19 @@
             let motionDetected = false;
             let motionCheckInterval;
             let photoBlob = null;
+            
+            async function initializeSegmentation() {
+                selfieSegmentation = new SelfieSegmentation({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
+                    }
+                });
+                
+                await selfieSegmentation.setOptions({
+                    modelSelection: 1, // 1 para modelo geral
+                    selfieMode: true
+                });
+            }
 
             // 1. Carregar modelos do face-api.js
             async function loadFaceModels() {
@@ -144,6 +162,10 @@
             // 2. Iniciar câmera
             async function initCamera() {
                 try {
+                    if (mediaStream) {
+                        mediaStream.getTracks().forEach(track => track.stop());
+                    }
+
                     stream = await navigator.mediaDevices.getUserMedia({
                         video: {
                             width: { ideal: 1280 },
@@ -154,6 +176,8 @@
                     });
 
                     video.srcObject = stream;
+                    isCameraActive = true;
+
                     video.onloadedmetadata = () => {
                         canvas.width = video.videoWidth;
                         canvas.height = video.videoHeight;
@@ -494,9 +518,13 @@
                 
                 submitBtn.disabled = false;
             }
-
+            
             async function capturePhoto() {
                 return new Promise((resolve) => {
+                    if (mediaStream) {
+                        mediaStream.getTracks().forEach(track => track.stop());
+                        isCameraActive = false;
+                    }
                     const canvas = document.getElementById('canvas');
                     const video = document.getElementById('video');
 
@@ -508,10 +536,12 @@
                     // Captura com iluminação otimizada
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+                    video.style.display = 'none';
+                    canvas.style.display = 'block';
                     // Processamento adicional para melhorar a foto
                     const imageData = enhanceImage(ctx);
                     ctx.putImageData(imageData, 0, 0);
-
+                    
                     // Converter para Blob com qualidade
                     canvas.toBlob((blob) => {
                         resolve({
@@ -525,8 +555,6 @@
             // Novo fluxo principal
             async function initiateValidationAndCapture() {
                 try {
-                    // 1. Validação de movimento da cabeça (obrigatória primeiro)
-                    await validateHeadMovement(video);
 
                     // 2. Validação de posicionamento (só começa após movimento ser aprovado)
                     const positionValid = await validateFacePosition(video);
@@ -644,6 +672,18 @@
                     captureBtn.disabled = false;
                 }
             });
+            function showComparison(originalBlob, whiteBgBlob) {
+                const originalUrl = URL.createObjectURL(originalBlob);
+                const whiteBgUrl = URL.createObjectURL(whiteBgBlob);
+                
+                resultsDiv.innerHTML = `
+                    <div class="preview-container">
+                        <img src="${originalUrl}" class="original-bg" style="width: ${originalBlob.width}px">
+                        <img src="${whiteBgUrl}" class="white-bg" style="width: ${originalBlob.width}px">
+                    </div>
+                    <p>Imagem processada com fundo branco</p>
+                `;
+            }
 
             // 9. Evento de captura
             validacaoBtn.addEventListener('click', async () => {
@@ -673,6 +713,10 @@
                 cameraContainer.style.display = 'block';
                 const validationResultss = document.getElementById('validationResults');
                 validationResultss.style.display = 'none';
+                canvas.style.display = 'none';
+                video.style.display = 'block';
+                initCamera();
+
             });
 
             // 11. Inicializar a aplicação
@@ -1004,7 +1048,7 @@ function calculateRegionBrightness(imageData) {
                 
                 // 3. Validar conforme padrão ICAO
                 const validation = await validateICAO(detectionResult,blob);
-                
+
                 return {
                     isValid: validation.isValid,
                     issues: validation.issues,
@@ -1098,6 +1142,13 @@ function calculateRegionBrightness(imageData) {
             const backgroundValidation = await validateWhiteBackground(blob, face.faceRectangle);
 
             const issues = [];
+            const whiteBgImage = await replaceBackgroundWithWhite(blob, face.faceRectangle);
+        
+                    // Agora você pode usar whiteBgImage que tem fundo branco
+                    const previewUrl = URL.createObjectURL(whiteBgImage);
+                    let previewImg = document.getElementById('previewImg');
+                    previewImg.src = previewUrl;
+                    previewImg.style.display = 'block';
 
             // 1. Qualidade básica
             if (attributes.qualityForRecognition !== 'high') {
@@ -1141,9 +1192,10 @@ function calculateRegionBrightness(imageData) {
                 Math.abs(attributes.headPose.pitch) > 15) {
                 issues.push("Rosto não está frontal à câmera");
             }
+            /*
             if (!backgroundValidation.isWhite) {
                 issues.push(`Fundo não é branco (${backgroundValidation.whitePercentage.toFixed(1)}% de pixels brancos)`);
-            }
+            }*/
             return {
                 isValid: issues.length === 0,
                 issues: issues,
@@ -1372,7 +1424,7 @@ function calculateRegionBrightness(imageData) {
             console.log("Razão:", ratio);
 
             // Limiares ajustados após testes
-            if (ratio > 0.8) {
+            if (ratio > 0.73) {
                 return 'up';    // Cabeça erguida
             } else if (ratio < 0.55) {
                 return 'down';  // Cabeça abaixada
@@ -1381,77 +1433,160 @@ function calculateRegionBrightness(imageData) {
             }
         }
 
+        
+
         // Adicione esta função ao seu código
-async function validateWhiteBackground(blob, faceRectangle) {
+        async function validateWhiteBackground(blob, faceRectangle) {
+            const img = await createImageBitmap(blob);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            // Definir margem ao redor do rosto para análise
+            const margin = 20;
+            
+            // Área a ser analisada (toda a imagem exceto a área do rosto com margem)
+            const backgroundArea = {
+                x: 0,
+                y: 0,
+                width: canvas.width,
+                height: canvas.height,
+                exclude: {
+                    x: Math.max(0, faceRectangle.left - margin),
+                    y: Math.max(0, faceRectangle.top - margin),
+                    width: Math.min(canvas.width, faceRectangle.width + margin * 2),
+                    height: Math.min(canvas.height, faceRectangle.height + margin * 2)
+                }
+            };
+            
+            // Analisar pixels do fundo
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const backgroundPixels = getBackgroundPixels(imageData, backgroundArea);
+            
+            // Calcular porcentagem de pixels brancos
+            const whiteThreshold = 230; // Valor RGB mínimo para considerar como "branco" (0-255)
+            let whitePixels = 0;
+            
+            for (let i = 0; i < backgroundPixels.length; i += 4) {
+                if (backgroundPixels[i] > whiteThreshold &&     // R
+                    backgroundPixels[i+1] > whiteThreshold &&   // G
+                    backgroundPixels[i+2] > whiteThreshold) {   // B
+                    whitePixels++;
+                }
+            }
+            
+            const whitePercentage = (whitePixels / (backgroundPixels.length / 4)) * 100;
+            
+            // Considerar como fundo branco se pelo menos 85% dos pixels forem brancos
+            return {
+                isWhite: whitePercentage >= 85,
+                whitePercentage: whitePercentage
+            };
+        }
+
+        // Função auxiliar para obter pixels do fundo
+        function getBackgroundPixels(imageData, area) {
+            const pixels = [];
+            const data = imageData.data;
+            
+            for (let y = 0; y < area.height; y++) {
+                for (let x = 0; x < area.width; x++) {
+                    // Pular área do rosto
+                    if (x >= area.exclude.x && x < area.exclude.x + area.exclude.width &&
+                        y >= area.exclude.y && y < area.exclude.y + area.exclude.height) {
+                        continue;
+                    }
+                    
+                    const idx = (y * imageData.width + x) * 4;
+                    pixels.push(data[idx], data[idx+1], data[idx+2], data[idx+3]);
+                }
+            }
+            
+            return pixels;
+        }
+
+        async function removeBackgroundWithAzure(imageBase64) {
+            const endpoint = "https://customvisionicao.cognitiveservices.azure.com";
+            const apiUrl = `${endpoint}/computervision/imageanalysis:segment?api-version=2023-02-01-preview&mode=backgroundRemoval`;
+            const conteudoImg = base64ToArrayBuffer(imageBase64);
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/octet-stream',
+                    'Ocp-Apim-Subscription-Key': '8GQlGfw2iPrCQcMUa4kJnrByWbc8PTIXKrFWFXV9RQy1y4HCtSpXJQQJ99BDACYeBjFXJ3w3AAAJACOG3Q56'
+                },
+                body: conteudoImg
+            });
+            
+            if (!response.ok) throw new Error('Falha na remoção do fundo');
+            return await response.blob();
+        }
+
+
+// Função para aplicar fundo branco
+async function applyWhiteBackground(blob) {
     const img = await createImageBitmap(blob);
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     
     canvas.width = img.width;
     canvas.height = img.height;
+    
+    // Preencher com branco
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Desenhar a imagem sem fundo
     ctx.drawImage(img, 0, 0);
     
-    // Definir margem ao redor do rosto para análise
-    const margin = 20;
-    
-    // Área a ser analisada (toda a imagem exceto a área do rosto com margem)
-    const backgroundArea = {
-        x: 0,
-        y: 0,
-        width: canvas.width,
-        height: canvas.height,
-        exclude: {
-            x: Math.max(0, faceRectangle.left - margin),
-            y: Math.max(0, faceRectangle.top - margin),
-            width: Math.min(canvas.width, faceRectangle.width + margin * 2),
-            height: Math.min(canvas.height, faceRectangle.height + margin * 2)
-        }
-    };
-    
-    // Analisar pixels do fundo
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const backgroundPixels = getBackgroundPixels(imageData, backgroundArea);
-    
-    // Calcular porcentagem de pixels brancos
-    const whiteThreshold = 230; // Valor RGB mínimo para considerar como "branco" (0-255)
-    let whitePixels = 0;
-    
-    for (let i = 0; i < backgroundPixels.length; i += 4) {
-        if (backgroundPixels[i] > whiteThreshold &&     // R
-            backgroundPixels[i+1] > whiteThreshold &&   // G
-            backgroundPixels[i+2] > whiteThreshold) {   // B
-            whitePixels++;
-        }
-    }
-    
-    const whitePercentage = (whitePixels / (backgroundPixels.length / 4)) * 100;
-    
-    // Considerar como fundo branco se pelo menos 85% dos pixels forem brancos
-    return {
-        isWhite: whitePercentage >= 85,
-        whitePercentage: whitePercentage
-    };
+    return new Promise((resolve) => {
+        canvas.toBlob(resolve, 'image/jpeg', 0.92);
+    });
 }
 
-// Função auxiliar para obter pixels do fundo
-function getBackgroundPixels(imageData, area) {
-    const pixels = [];
-    const data = imageData.data;
+async function replaceBackgroundWithWhite(blob, faceRectangle) {
+    const img = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
     
-    for (let y = 0; y < area.height; y++) {
-        for (let x = 0; x < area.width; x++) {
-            // Pular área do rosto
-            if (x >= area.exclude.x && x < area.exclude.x + area.exclude.width &&
-                y >= area.exclude.y && y < area.exclude.y + area.exclude.height) {
-                continue;
-            }
-            
-            const idx = (y * imageData.width + x) * 4;
-            pixels.push(data[idx], data[idx+1], data[idx+2], data[idx+3]);
-        }
-    }
+    canvas.width = img.width;
+    canvas.height = img.height;
     
-    return pixels;
+    // 1. Desenhar fundo branco
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // 2. Desenhar a pessoa (técnica de máscara simples)
+    ctx.save();
+    
+    // Criar máscara ao redor do rosto com margem
+    const margin = 30;
+    const x = Math.max(0, faceRectangle.left - margin);
+    const y = Math.max(0, faceRectangle.top - margin);
+    const width = Math.min(canvas.width, faceRectangle.width + margin * 2);
+    const height = Math.min(canvas.height, faceRectangle.height + margin * 2);
+    
+    // Forma oval para melhor resultado
+    ctx.beginPath();
+    ctx.ellipse(
+        x + width/2, y + height/2, // Centro
+        width/2, height/1.8,       // Raios
+        0, 0, Math.PI * 2          // Rotação e arco
+    );
+    ctx.closePath();
+    ctx.clip();
+    
+    // Desenhar a imagem original (apenas na área do clip)
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+    
+    // 3. Converter de volta para Blob
+    return new Promise((resolve) => {
+        canvas.toBlob(resolve, 'image/jpeg', 0.92);
+    });
 }
 
     </script>
