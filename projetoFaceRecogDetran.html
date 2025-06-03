@@ -23,11 +23,12 @@
             <div class="card-body">
                 <div id="mensagemMovimentoContainer" class="mensagem-movimento-container"></div>
                 <br>
-                <div id="cameraContainer" class="camera-container">
+                <div id="cameraContainer" class="camera-container round-camera">
                     <video id="video" autoplay playsinline></video>
                     <div class="face-guidelines"></div>
                     <canvas id="canvas" style="display: none;"></canvas>
                 </div>
+
 
                 <div class="controls">
                     <button id="validacaoBtn" class="btn-primary" style="display:block;">
@@ -71,7 +72,7 @@
                 </div>
 
                 <div id="results" class="preview-container">
-                    <img id="previewImg" style="display: none; max-width: 100%; border-radius: 8px;">
+                    <img id="previewImg" style="display: none; max-width: 60%; border-radius: 8px;">
                     <div id="validationResults"></div>
                 </div>
             </div>
@@ -622,46 +623,7 @@
             //10. Tirar Foto
             // 9. Evento de captura
             captureBtn.addEventListener('click', async () => {
-                /*try {
-                    // 2. Depois continua com a captura normal
-                    clearInterval(motionCheckInterval);
-                    captureBtn.disabled = true;
-
-                    const quality = 0.92;
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                    canvas.toBlob(async (blob) => {
-                        photoBlob = blob;
-                        const previewUrl = URL.createObjectURL(blob);
-
-                        resultsDiv.innerHTML = `
-                            <h3>Pré-validação Facial</h3>
-                            <img id="previewImg" src="${previewUrl}" style="max-width: 60%; border-radius: 8px;">
-                            <div id="validationResults"></div>
-                        `;
-
-                        try {
-                            const imgElement = document.getElementById('previewImg');
-                            cameraContainer.style.display = 'none';
-                            const validation = await validateClientSide(blob);
-                            displayValidationResults(validation, imgElement);
-                        } catch (error) {
-                            console.error("Erro na validação:", error);
-                            resultsDiv.innerHTML += `<p class="invalid">Erro durante a validação: ${error.message}</p>`;
-                            retryBtn.style.display = 'inline-block';
-                        }
-
-                        captureBtn.style.display = 'none';
-                        retryBtn.style.display = 'inline-block';
-                        submitBtn.style.display = 'inline-block';
-                        
-                    }, 'image/jpeg', quality);
-                } catch (error) {
-                    console.error("Erro na validação de movimento:", error);
-                    resultsDiv.innerHTML = `<p class="invalid">Erro na validação: ${error.message}</p>`;
-                    captureBtn.disabled = false;
-                    retryBtn.style.display = 'inline-block';
-                }*/
+                
                 try {
                     captureBtn.disabled = true;
                     const { blob } = await capturePhoto();
@@ -1311,188 +1273,37 @@ function calculateRegionBrightness(imageData) {
             return Math.max(0, Math.min(1, similarity));
         }
 
-async function validateDistanceMovement(videoElement) {
-    return new Promise(async (resolve, reject) => {
-        // Configuração do overlay
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.7); color: white; z-index: 1000;
-            display: flex; flex-direction: column; justify-content: center;
-            align-items: center; text-align: center; font-size: 1.2em;
-        `;
-
-        const statusDiv = document.createElement('div');
-        statusDiv.style.cssText = `
-            margin: 5px; font-size: 14px; font-weight: bold;
-            min-height: 2em;
-        `;
-
-        const progressBar = document.createElement('div');
-        progressBar.style.cssText = `
-            width: 80%; height: 20px; background: #333;
-            border-radius: 10px; margin: 5px; overflow: hidden;
-        `;
-
-        const progressFill = document.createElement('div');
-        progressFill.style.cssText = `
-            height: 100%; width: 0%; background: #4CAF50;
-            transition: width 0.3s;
-        `;
-
-        progressBar.appendChild(progressFill);
-        overlay.innerHTML = `<h5>Validação de Distância</h3>`;
-        overlay.appendChild(statusDiv);
-        overlay.appendChild(progressBar);
-
-        document.querySelector('.mensagem-movimento-container').appendChild(overlay);
-
-        // Estados da validação
-        const steps = [
-            { instruction: "APROXIME-SE da tela", target: 'closer', duration: 2000 },
-            { instruction: "AGORA AFASTE-SE da tela", target: 'farther', duration: 2000 },
-            { instruction: "VOLTE para POSIÇÃO NORMAL", target: 'normal', duration: 1000 }
-        ];
-
-        mensagemMovimentoContainer.style.display = 'block';
-
-        let currentStep = 0;
-        let progress = 0;
-        let correctDirectionTime = 0;
-        let lastFaceSize = 0;
-        let lastTime = Date.now();
-        let baselineFaceSize = 0;
-
-        // Função para atualizar a interface
-        function updateUI() {
-            statusDiv.textContent = steps[currentStep].instruction;
-            progressFill.style.width = `${progress}%`;
-        }
-
-        updateUI();
-
-        // Verificação contínua
-        const checkInterval = setInterval(async () => {
-            try {
-                const now = Date.now();
-                const deltaTime = now - lastTime;
-                lastTime = now;
-
-                const detections = await faceapi.detectAllFaces(videoElement,
-                    new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
-
-                if (detections.length === 0) {
-                    statusDiv.textContent = "Rosto não detectado! Posicione-se no círculo";
-                    progress = Math.max(0, progress - 5);
-                    updateUI();
-                    return;
-                }
-
-                // Obter o tamanho atual do rosto (área da caixa delimitadora)
-                const faceBox = detections[0].detection.box;
-                const currentFaceSize = faceBox.width * faceBox.height;
-                
-                // Estabelecer tamanho base na primeira detecção
-                if (baselineFaceSize === 0) {
-                    baselineFaceSize = currentFaceSize;
-                    return;
-                }
-
-                // Calcular mudança relativa no tamanho
-                const sizeChange = currentFaceSize / baselineFaceSize;
-                
-                // Determinar direção atual
-                let currentDirection;
-                if (sizeChange > 1.4) { // Aumento significativo (>40%)
-                    currentDirection = 'closer';
-                } else if (sizeChange < 0.7) { // Redução significativa (<70%)
-                    currentDirection = 'farther';
-                } else { // Tamanho normal (±30%)
-                    currentDirection = 'normal';
-                }
-
-                // Verificar se está na direção correta
-                if (currentDirection === steps[currentStep].target) {
-                    // Calcular progresso baseado no tempo na posição correta
-                    const progressIncrement = (deltaTime / steps[currentStep].duration) * 100;
-                    progress = Math.min(100, progress + progressIncrement);
-
-                    // Se completou o tempo necessário na posição correta
-                    if (correctDirectionTime >= steps[currentStep].duration) {
-                        progress = 100;
-                        updateUI();
-
-                        // Avançar para o próximo passo
-                        currentStep++;
-                        progress = 0;
-                        correctDirectionTime = 0;
-
-                        // Se completou todos os passos
-                        if (currentStep >= steps.length) {
-                            clearInterval(checkInterval);
-                            overlay.remove();
-                            mensagemMovimentoContainer.style.display = 'none';
-                            resolve();
-                            return;
-                        }
-                    }
-                } else {
-                    progress = Math.max(0, progress - (deltaTime / 200));
-                }
-
-                updateUI();
-                lastFaceSize = currentFaceSize;
-                correctDirectionTime += deltaTime;
-
-            } catch (error) {
-                console.error("Erro na validação:", error);
-                progress = Math.max(0, progress - 5);
-                updateUI();
-            }
-        }, 100);
-
-        // Timeout
-        setTimeout(() => {
-            clearInterval(checkInterval);
-            overlay.remove();
-            reject(new Error("Tempo excedido para validação de movimento"));
-        }, 60000);
-    });
-}
-
-        // Adicione esta função junto com as outras funções auxiliares
-        // Substitua a função validateHeadMovement por esta versão corrigida
-        async function validateHeadMovement(videoElement) {
+        async function validateDistanceMovement(videoElement) {
             return new Promise(async (resolve, reject) => {
                 // Configuração do overlay
                 const overlay = document.createElement('div');
                 overlay.style.cssText = `
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.7); color: white; z-index: 1000;
-            display: flex; flex-direction: column; justify-content: center;
-            align-items: center; text-align: center; font-size: 1.2em;
-        `;
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                    background: rgba(0,0,0,0.7); color: white; z-index: 1000;
+                    display: flex; flex-direction: column; justify-content: center;
+                    align-items: center; text-align: center; font-size: 1.2em;
+                `;
 
                 const statusDiv = document.createElement('div');
                 statusDiv.style.cssText = `
-            margin: 5px; font-size: 14px; font-weight: bold;
-            min-height: 2em;
-        `;
+                    margin: 5px; font-size: 14px; font-weight: bold;
+                    min-height: 2em;
+                `;
 
                 const progressBar = document.createElement('div');
                 progressBar.style.cssText = `
-            width: 80%; height: 20px; background: #333;
-            border-radius: 10px; margin: 5px; overflow: hidden;
-        `;
+                    width: 80%; height: 20px; background: #333;
+                    border-radius: 10px; margin: 5px; overflow: hidden;
+                `;
 
                 const progressFill = document.createElement('div');
                 progressFill.style.cssText = `
-            height: 100%; width: 0%; background: #4CAF50;
-            transition: width 0.3s;
-        `;
+                    height: 100%; width: 0%; background: #4CAF50;
+                    transition: width 0.3s;
+                `;
 
                 progressBar.appendChild(progressFill);
-                overlay.innerHTML = `<h5>Validação de Movimento</h3>`;
+                overlay.innerHTML = `<h5>Validação de Distância</h3>`;
                 overlay.appendChild(statusDiv);
                 overlay.appendChild(progressBar);
 
@@ -1500,9 +1311,9 @@ async function validateDistanceMovement(videoElement) {
 
                 // Estados da validação
                 const steps = [
-                    { instruction: "LEVANTE a cabeça e olhe para CIMA", target: 'up', duration: 2000 },
-                    { instruction: "AGORA ABAIXE a cabeça e olhe para BAIXO", target: 'down', duration: 2000 },
-                    { instruction: "VOLTE para POSIÇÃO NORMAL", target: 'center', duration: 1000 }
+                    { instruction: "APROXIME-SE da tela", target: 'closer', duration: 2000 },
+                    { instruction: "AGORA AFASTE-SE da tela", target: 'farther', duration: 2000 },
+                    { instruction: "VOLTE para POSIÇÃO NORMAL", target: 'normal', duration: 1000 }
                 ];
 
                 mensagemMovimentoContainer.style.display = 'block';
@@ -1510,8 +1321,9 @@ async function validateDistanceMovement(videoElement) {
                 let currentStep = 0;
                 let progress = 0;
                 let correctDirectionTime = 0;
-                let lastDirection = '';
+                let lastFaceSize = 0;
                 let lastTime = Date.now();
+                let baselineFaceSize = 0;
 
                 // Função para atualizar a interface
                 function updateUI() {
@@ -1538,14 +1350,27 @@ async function validateDistanceMovement(videoElement) {
                             return;
                         }
 
-                        const currentDirection = getHeadDirection(detections[0].landmarks);
+                        // Obter o tamanho atual do rosto (área da caixa delimitadora)
+                        const faceBox = detections[0].detection.box;
+                        const currentFaceSize = faceBox.width * faceBox.height;
+                        
+                        // Estabelecer tamanho base na primeira detecção
+                        if (baselineFaceSize === 0) {
+                            baselineFaceSize = currentFaceSize;
+                            return;
+                        }
 
-                        // Verificar se a direção mudou
-                        if (currentDirection !== lastDirection) {
-                            correctDirectionTime = 0;
-                            lastDirection = currentDirection;
-                        } else {
-                            correctDirectionTime += deltaTime;
+                        // Calcular mudança relativa no tamanho
+                        const sizeChange = currentFaceSize / baselineFaceSize;
+                        
+                        // Determinar direção atual
+                        let currentDirection;
+                        if (sizeChange > 1.4) { // Aumento significativo (>40%)
+                            currentDirection = 'closer';
+                        } else if (sizeChange < 0.7) { // Redução significativa (<70%)
+                            currentDirection = 'farther';
+                        } else { // Tamanho normal (±30%)
+                            currentDirection = 'normal';
                         }
 
                         // Verificar se está na direção correta
@@ -1578,6 +1403,8 @@ async function validateDistanceMovement(videoElement) {
                         }
 
                         updateUI();
+                        lastFaceSize = currentFaceSize;
+                        correctDirectionTime += deltaTime;
 
                     } catch (error) {
                         console.error("Erro na validação:", error);
@@ -1594,45 +1421,6 @@ async function validateDistanceMovement(videoElement) {
                 }, 60000);
             });
         }
-
-        function getHeadDirection(landmarks) {
-            const nose = landmarks.getNose();
-            const jaw = landmarks.getJawOutline();
-            const leftEye = landmarks.getLeftEye();
-            const rightEye = landmarks.getRightEye();
-
-            // Pontos-chave
-            const noseTip = nose[3];       // Ponta do nariz
-            const chin = jaw[8];           // Centro do queixo
-            const leftEyeCorner = leftEye[0];
-            const rightEyeCorner = rightEye[3];
-
-            // Calcular pontos médios
-            const eyesCenter = {
-                x: (leftEyeCorner.x + rightEyeCorner.x) / 2,
-                y: (leftEyeCorner.y + rightEyeCorner.y) / 2
-            };
-
-            // Distâncias importantes
-            const noseToChin = Math.sqrt(Math.pow(noseTip.x - chin.x, 2) + Math.pow(noseTip.y - chin.y, 2));
-            const eyesToChin = Math.sqrt(Math.pow(eyesCenter.x - chin.x, 2) + Math.pow(eyesCenter.y - chin.y, 2));
-
-            // Razão crítica para determinar direção
-            const ratio = noseToChin / eyesToChin;
-            console.log("Razão:", ratio);
-
-            // Limiares ajustados após testes
-            if (ratio > 0.73) {
-                return 'up';    // Cabeça erguida
-            } else if (ratio < 0.55) {
-                return 'down';  // Cabeça abaixada
-            } else {
-                return 'center'; // Posição normal
-            }
-        }
-
-        
-
         // Adicione esta função ao seu código
         async function validateWhiteBackground(blob, faceRectangle) {
             const img = await createImageBitmap(blob);
@@ -1706,101 +1494,35 @@ async function validateDistanceMovement(videoElement) {
             return pixels;
         }
 
-        async function removeBackgroundWithAzure(imageBase64) {
-            const endpoint = "https://customvisionicao.cognitiveservices.azure.com";
-            const apiUrl = `${endpoint}/computervision/imageanalysis:segment?api-version=2023-02-01-preview&mode=backgroundRemoval`;
-            const conteudoImg = base64ToArrayBuffer(imageBase64);
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/octet-stream',
-                    'Ocp-Apim-Subscription-Key': '8GQlGfw2iPrCQcMUa4kJnrByWbc8PTIXKrFWFXV9RQy1y4HCtSpXJQQJ99BDACYeBjFXJ3w3AAAJACOG3Q56'
-                },
-                body: conteudoImg
-            });
-            
-            if (!response.ok) throw new Error('Falha na remoção do fundo');
-            return await response.blob();
-        }
-
         async function isSmiling(landmarks) {
             const mouth = landmarks.getMouth();
 
-// Pega os pontos centrais superior e inferior dos lábios
-const topLip = mouth[13];    // ponto central superior da boca
-const bottomLip = mouth[19]; // ponto central inferior da boca
+            // Pega os pontos centrais superior e inferior dos lábios
+            const topLip = mouth[13];    // ponto central superior da boca
+            const bottomLip = mouth[19]; // ponto central inferior da boca
 
-const mouthOpen = Math.hypot(
-    bottomLip.x - topLip.x,
-    bottomLip.y - topLip.y
-);
+            const mouthOpen = Math.hypot(
+                bottomLip.x - topLip.x,
+                bottomLip.y - topLip.y
+            );
 
-// Mede a largura da boca (canto a canto)
-const leftCorner = mouth[0];
-const rightCorner = mouth[6];
+            // Mede a largura da boca (canto a canto)
+            const leftCorner = mouth[0];
+            const rightCorner = mouth[6];
 
-const mouthWidth = Math.hypot(
-    rightCorner.x - leftCorner.x,
-    rightCorner.y - leftCorner.y
-);
+            const mouthWidth = Math.hypot(
+                rightCorner.x - leftCorner.x,
+                rightCorner.y - leftCorner.y
+            );
 
-// Calcula a proporção abertura/largura
-const mouthOpenRatio = mouthOpen / mouthWidth;
+            // Calcula a proporção abertura/largura
+            const mouthOpenRatio = mouthOpen / mouthWidth;
 
-console.log('Mouth Open Ratio:', mouthOpenRatio);
+            console.log('Mouth Open Ratio:', mouthOpenRatio);
 
-// Se a abertura da boca for mais de 0.04 (ajustável), considera aberta (ou sorrindo mostrando dentes)
-return mouthOpenRatio > 0.09;
+            // Se a abertura da boca for mais de 0.04 (ajustável), considera aberta (ou sorrindo mostrando dentes)
+            return mouthOpenRatio > 0.09;
         }
-
-async function removeBackgroundWithRemoveBg(blob) {
-    const apiKey = 'U8hQiXuTaQEX5tHoBs4kV2ok'; // <- substitua aqui
-
-    const formData = new FormData();
-    formData.append("image_file", blob);
-    formData.append("size", "auto");
-
-    const response = await fetch("https://api.remove.bg/v1.0/removebg", {
-        method: "POST",
-        headers: {
-            "X-Api-Key": apiKey,
-        },
-        body: formData
-    });
-
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Erro do Remove.bg: ${errText}`);
-    }
-
-    const resultBlob = await response.blob();
-
-    // Joga fundo branco por trás da imagem transparente
-    return await composeWithWhiteBackground(resultBlob);
-}
-
-async function composeWithWhiteBackground(foregroundBlob) {
-    const fgImg = await createImageBitmap(foregroundBlob);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = fgImg.width;
-    canvas.height = fgImg.height;
-
-    const ctx = canvas.getContext('2d');
-
-    // Fundo branco
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Imagem recortada por cima
-    ctx.drawImage(fgImg, 0, 0);
-
-    return new Promise((resolve) => {
-        canvas.toBlob((finalBlob) => {
-            resolve(finalBlob);
-        }, 'image/jpeg', 0.95);
-    });
-}
 
             // 12. Limpeza
             window.addEventListener('beforeunload', () => {
