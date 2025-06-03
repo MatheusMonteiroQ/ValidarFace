@@ -18,7 +18,7 @@
     <main class="main-container">
         <div class="card">
             <div class="card-header">
-                Validação de Identidade
+                Validação de Identidade v1
             </div>
             <div class="card-body">
                 <div id="mensagemMovimentoContainer" class="mensagem-movimento-container"></div>
@@ -354,6 +354,8 @@
                 const leftEye = landmarks.getLeftEye();
                 const rightEye = landmarks.getRightEye();
 
+                const smiling = isSmiling(landmarks);
+
                 const eyeDX = rightEye[3].x - leftEye[0].x;
                 const eyeDY = rightEye[3].y - leftEye[0].y;
                 const eyeAngle = Math.atan2(eyeDY, eyeDX) * 180 / Math.PI;
@@ -374,12 +376,16 @@
                     offsetX < 30 &&
                     offsetY < 30 &&
                     Math.abs(eyeAngle) < 10 &&
-                    sharpness > 40
+                    sharpness > 40 &&
+                    !smiling // Aqui adiciona que não pode estar sorrindo
                     //lighting.isValid  // Inclui validação de iluminação
                 );
 
                 // Coletar issues
                 const issues = [];
+                if (smiling) {
+                        issues.push('Sorriso detectado - feche a boca e mantenha uma expressão neutra');
+                    }
                 if (detections.length !== 1) issues.push('Deve haver exatamente um rosto');
                 //normal largura da cara 30 a 70
                 if (faceWidthPercent < 20) issues.push('Rosto muito pequeno');
@@ -462,7 +468,7 @@
                             </ul>
                         </div>
                     `;
-                    submitBtn.disabled = true;
+                    submitBtn.disabled = false;
                     return;
                 }
 
@@ -690,7 +696,8 @@
             validacaoBtn.addEventListener('click', async () => {
                 try {
                     // 1. Primeiro valida o movimento da cabeça
-                    await validateHeadMovement(video);
+                    // 1. Primeiro valida o movimento de distância
+                    await validateDistanceMovement(video);
                     // 2. Depois continua com a captura normal
                     clearInterval(motionCheckInterval);
                     captureBtn.disabled = false;
@@ -769,7 +776,7 @@
                 `;
             }
             
-            submitBtn.disabled = !validation.isValid;
+            submitBtn.disabled = false;
             retryBtn.style.display = 'inline-block';
             submitBtn.style.display = 'inline-block';
         };
@@ -1039,8 +1046,11 @@ function calculateRegionBrightness(imageData) {
                 // 2. Chamar Azure Face API
                 const detectionResult = await callAzureFaceAPI(imageBase64);
                 
+                //Validar Sorriso
+                
                 // 3. Validar conforme padrão ICAO
                 const validation = await validateICAO(detectionResult,blob);
+                
 
                 return {
                     isValid: validation.isValid,
@@ -1121,7 +1131,47 @@ function calculateRegionBrightness(imageData) {
         }
 
         // Validar conforme padrão ICAO
-        async function validateICAO(azureResult,blob) {
+        async function validateICAO(azureResult,blob,smilling) {
+
+            const img = await createImageBitmap(blob);
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+
+                tempCanvas.width = img.width;
+                tempCanvas.height = img.height;
+                tempCtx.drawImage(img, 0, 0);
+
+                const detections = await detectFaces(tempCanvas);
+
+                if (detections.length === 0) {
+                    return {
+                        isValid: false,
+                        issues: ['Nenhum rosto detectado'],
+                        details: {}
+                    };
+                }
+
+                const mainFace = detections.reduce((prev, current) =>
+                    (prev.detection.box.width > current.detection.box.width) ? prev : current
+                );
+
+                const box = mainFace.detection.box;
+                const faceWidthPercent = (box.width / tempCanvas.width) * 100;
+
+                const centerX = tempCanvas.width / 2;
+                const centerY = tempCanvas.height / 2;
+                const faceCenterX = box.x + (box.width / 2);
+                const faceCenterY = box.y + (box.height / 2);
+
+                const offsetX = Math.abs(faceCenterX - centerX) / centerX * 100;
+                const offsetY = Math.abs(faceCenterY - centerY) / centerY * 100;
+
+                const landmarks = mainFace.landmarks;
+                const leftEye = landmarks.getLeftEye();
+                const rightEye = landmarks.getRightEye();
+                    
+                const smiling = await isSmiling(landmarks);
+
             if (!azureResult || azureResult.length === 0) {
                 return { isValid: false, issues: ["Nenhum rosto detectado"] };
             }
@@ -1133,20 +1183,18 @@ function calculateRegionBrightness(imageData) {
             const face = azureResult[0];
             const attributes = face.faceAttributes;
             const backgroundValidation = await validateWhiteBackground(blob, face.faceRectangle);
-
+            
             const issues = [];
-            const whiteBgImage = await removeBackgroundWithRemoveBg(blob);
-        
-                    // Agora você pode usar whiteBgImage que tem fundo branco
-                    const previewUrl = URL.createObjectURL(whiteBgImage);
-                    let previewImg = document.getElementById('previewImg');
-                    previewImg.src = previewUrl;
-                    previewImg.style.display = 'block';
+
 
             // 1. Qualidade básica
             if (attributes.qualityForRecognition !== 'high') {
                 issues.push("Qualidade da imagem insuficiente para reconhecimento");
             }
+
+            if (smiling) {
+                        issues.push('Sorriso detectado - feche a boca e mantenha uma expressão neutra');
+                    }
 
             // 2. Acessórios
             if (attributes.accessories && attributes.accessories.length > 0) {
@@ -1185,10 +1233,18 @@ function calculateRegionBrightness(imageData) {
                 Math.abs(attributes.headPose.pitch) > 15) {
                 issues.push("Rosto não está frontal à câmera");
             }
-            /*
+            
             if (!backgroundValidation.isWhite) {
                 issues.push(`Fundo não é branco (${backgroundValidation.whitePercentage.toFixed(1)}% de pixels brancos)`);
-            }*/
+            }
+
+ 
+                const previewUrl = URL.createObjectURL(blob);
+                const previewImg = document.getElementById('previewImg');
+                previewImg.src = previewUrl;
+                previewImg.style.display = 'block';
+            
+
             return {
                 isValid: issues.length === 0,
                 issues: issues,
@@ -1254,6 +1310,155 @@ function calculateRegionBrightness(imageData) {
             // Garantir que o resultado está entre 0 e 1
             return Math.max(0, Math.min(1, similarity));
         }
+
+async function validateDistanceMovement(videoElement) {
+    return new Promise(async (resolve, reject) => {
+        // Configuração do overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); color: white; z-index: 1000;
+            display: flex; flex-direction: column; justify-content: center;
+            align-items: center; text-align: center; font-size: 1.2em;
+        `;
+
+        const statusDiv = document.createElement('div');
+        statusDiv.style.cssText = `
+            margin: 5px; font-size: 14px; font-weight: bold;
+            min-height: 2em;
+        `;
+
+        const progressBar = document.createElement('div');
+        progressBar.style.cssText = `
+            width: 80%; height: 20px; background: #333;
+            border-radius: 10px; margin: 5px; overflow: hidden;
+        `;
+
+        const progressFill = document.createElement('div');
+        progressFill.style.cssText = `
+            height: 100%; width: 0%; background: #4CAF50;
+            transition: width 0.3s;
+        `;
+
+        progressBar.appendChild(progressFill);
+        overlay.innerHTML = `<h5>Validação de Distância</h3>`;
+        overlay.appendChild(statusDiv);
+        overlay.appendChild(progressBar);
+
+        document.querySelector('.mensagem-movimento-container').appendChild(overlay);
+
+        // Estados da validação
+        const steps = [
+            { instruction: "APROXIME-SE da tela", target: 'closer', duration: 2000 },
+            { instruction: "AGORA AFASTE-SE da tela", target: 'farther', duration: 2000 },
+            { instruction: "VOLTE para POSIÇÃO NORMAL", target: 'normal', duration: 1000 }
+        ];
+
+        mensagemMovimentoContainer.style.display = 'block';
+
+        let currentStep = 0;
+        let progress = 0;
+        let correctDirectionTime = 0;
+        let lastFaceSize = 0;
+        let lastTime = Date.now();
+        let baselineFaceSize = 0;
+
+        // Função para atualizar a interface
+        function updateUI() {
+            statusDiv.textContent = steps[currentStep].instruction;
+            progressFill.style.width = `${progress}%`;
+        }
+
+        updateUI();
+
+        // Verificação contínua
+        const checkInterval = setInterval(async () => {
+            try {
+                const now = Date.now();
+                const deltaTime = now - lastTime;
+                lastTime = now;
+
+                const detections = await faceapi.detectAllFaces(videoElement,
+                    new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+
+                if (detections.length === 0) {
+                    statusDiv.textContent = "Rosto não detectado! Posicione-se no círculo";
+                    progress = Math.max(0, progress - 5);
+                    updateUI();
+                    return;
+                }
+
+                // Obter o tamanho atual do rosto (área da caixa delimitadora)
+                const faceBox = detections[0].detection.box;
+                const currentFaceSize = faceBox.width * faceBox.height;
+                
+                // Estabelecer tamanho base na primeira detecção
+                if (baselineFaceSize === 0) {
+                    baselineFaceSize = currentFaceSize;
+                    return;
+                }
+
+                // Calcular mudança relativa no tamanho
+                const sizeChange = currentFaceSize / baselineFaceSize;
+                
+                // Determinar direção atual
+                let currentDirection;
+                if (sizeChange > 1.4) { // Aumento significativo (>40%)
+                    currentDirection = 'closer';
+                } else if (sizeChange < 0.7) { // Redução significativa (<70%)
+                    currentDirection = 'farther';
+                } else { // Tamanho normal (±30%)
+                    currentDirection = 'normal';
+                }
+
+                // Verificar se está na direção correta
+                if (currentDirection === steps[currentStep].target) {
+                    // Calcular progresso baseado no tempo na posição correta
+                    const progressIncrement = (deltaTime / steps[currentStep].duration) * 100;
+                    progress = Math.min(100, progress + progressIncrement);
+
+                    // Se completou o tempo necessário na posição correta
+                    if (correctDirectionTime >= steps[currentStep].duration) {
+                        progress = 100;
+                        updateUI();
+
+                        // Avançar para o próximo passo
+                        currentStep++;
+                        progress = 0;
+                        correctDirectionTime = 0;
+
+                        // Se completou todos os passos
+                        if (currentStep >= steps.length) {
+                            clearInterval(checkInterval);
+                            overlay.remove();
+                            mensagemMovimentoContainer.style.display = 'none';
+                            resolve();
+                            return;
+                        }
+                    }
+                } else {
+                    progress = Math.max(0, progress - (deltaTime / 200));
+                }
+
+                updateUI();
+                lastFaceSize = currentFaceSize;
+                correctDirectionTime += deltaTime;
+
+            } catch (error) {
+                console.error("Erro na validação:", error);
+                progress = Math.max(0, progress - 5);
+                updateUI();
+            }
+        }, 100);
+
+        // Timeout
+        setTimeout(() => {
+            clearInterval(checkInterval);
+            overlay.remove();
+            reject(new Error("Tempo excedido para validação de movimento"));
+        }, 60000);
+    });
+}
 
         // Adicione esta função junto com as outras funções auxiliares
         // Substitua a função validateHeadMovement por esta versão corrigida
@@ -1518,27 +1723,35 @@ function calculateRegionBrightness(imageData) {
             return await response.blob();
         }
 
+        async function isSmiling(landmarks) {
+            const mouth = landmarks.getMouth();
 
-// Função para aplicar fundo branco
-async function applyWhiteBackground(blob) {
-    const img = await createImageBitmap(blob);
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    canvas.width = img.width;
-    canvas.height = img.height;
-    
-    // Preencher com branco
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Desenhar a imagem sem fundo
-    ctx.drawImage(img, 0, 0);
-    
-    return new Promise((resolve) => {
-        canvas.toBlob(resolve, 'image/jpeg', 0.92);
-    });
-}
+// Pega os pontos centrais superior e inferior dos lábios
+const topLip = mouth[13];    // ponto central superior da boca
+const bottomLip = mouth[19]; // ponto central inferior da boca
+
+const mouthOpen = Math.hypot(
+    bottomLip.x - topLip.x,
+    bottomLip.y - topLip.y
+);
+
+// Mede a largura da boca (canto a canto)
+const leftCorner = mouth[0];
+const rightCorner = mouth[6];
+
+const mouthWidth = Math.hypot(
+    rightCorner.x - leftCorner.x,
+    rightCorner.y - leftCorner.y
+);
+
+// Calcula a proporção abertura/largura
+const mouthOpenRatio = mouthOpen / mouthWidth;
+
+console.log('Mouth Open Ratio:', mouthOpenRatio);
+
+// Se a abertura da boca for mais de 0.04 (ajustável), considera aberta (ou sorrindo mostrando dentes)
+return mouthOpenRatio > 0.09;
+        }
 
 async function removeBackgroundWithRemoveBg(blob) {
     const apiKey = 'U8hQiXuTaQEX5tHoBs4kV2ok'; // <- substitua aqui
