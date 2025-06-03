@@ -1427,56 +1427,57 @@ function calculateRegionBrightness(imageData) {
             canvas.width = img.width;
             canvas.height = img.height;
             ctx.drawImage(img, 0, 0);
-            
-            const faceMargin = 30;
-    
-            // Área a ser ignorada (rosto + margem de segurança)
+
+            // Configurações ajustáveis
+            const WHITE_THRESHOLD = 200;  // Reduzido de 230 para 200 (mais tolerante)
+            const MIN_WHITE_PERCENTAGE = 5;  // % mínima de pixels "brancos"
+            const ANALYSIS_MARGIN = 30;  // Margem ao redor do rosto para ignorar
+
+            // Área do rosto expandida (para ignorar)
             const faceArea = {
-                x: Math.max(0, faceRectangle.left - faceMargin),
-                y: Math.max(0, faceRectangle.top - faceMargin),
-                width: Math.min(canvas.width, faceRectangle.width + faceMargin * 2),
-                height: Math.min(canvas.height, faceRectangle.height + faceMargin * 2)
+                x: Math.max(0, faceRectangle.left - ANALYSIS_MARGIN),
+                y: Math.max(0, faceRectangle.top - ANALYSIS_MARGIN),
+                width: Math.min(canvas.width, faceRectangle.width + ANALYSIS_MARGIN * 2),
+                height: Math.min(canvas.height, faceRectangle.height + ANALYSIS_MARGIN * 2)
             };
-            
-            // Analisar apenas as bordas da imagem (ignorando área central)
-            const borderWidth = 50; // Largura da borda a ser analisada
-            
+
+            // Analisar apenas bordas da imagem (ignorando centro)
+            const BORDER_WIDTH = 50;
             const analysisAreas = [
-                // Top border
-                { x: 0, y: 0, width: canvas.width, height: borderWidth },
-                // Bottom border
-                { x: 0, y: canvas.height - borderWidth, width: canvas.width, height: borderWidth },
-                // Left border (excluindo áreas já cobertas por top/bottom)
-                { x: 0, y: borderWidth, width: borderWidth, height: canvas.height - borderWidth * 2 },
-                // Right border (excluindo áreas já cobertas por top/bottom)
-                { x: canvas.width - borderWidth, y: borderWidth, width: borderWidth, height: canvas.height - borderWidth * 2 }
+                { x: 0, y: 0, width: canvas.width, height: BORDER_WIDTH }, // Topo
+                { x: 0, y: canvas.height - BORDER_WIDTH, width: canvas.width, height: BORDER_WIDTH }, // Base
+                { x: 0, y: BORDER_WIDTH, width: BORDER_WIDTH, height: canvas.height - BORDER_WIDTH * 2 }, // Esquerda
+                { x: canvas.width - BORDER_WIDTH, y: BORDER_WIDTH, width: BORDER_WIDTH, height: canvas.height - BORDER_WIDTH * 2 } // Direita
             ];
-            
+
             let totalPixels = 0;
             let whitePixels = 0;
-            let whiteThreshold = 230;
-            
-            // Analisar cada área de borda
+
+            // Função para verificar se um pixel é "suficientemente branco"
+            function isWhitePixel(r, g, b) {
+                // Considera branco se a média RGB > threshold E nenhum canal < threshold-30
+                const avg = (r + g + b) / 3;
+                return avg > WHITE_THRESHOLD && 
+                    r > WHITE_THRESHOLD - 30 && 
+                    g > WHITE_THRESHOLD - 30 && 
+                    b > WHITE_THRESHOLD - 30;
+            }
+
+            // Analisar cada área
             for (const area of analysisAreas) {
                 const imageData = ctx.getImageData(area.x, area.y, area.width, area.height);
                 const data = imageData.data;
                 
                 for (let i = 0; i < data.length; i += 4) {
-                    // Verificar se o pixel está dentro da área do rosto (para ignorar)
                     const pixelX = area.x + ((i/4) % area.width);
                     const pixelY = area.y + Math.floor((i/4) / area.width);
                     
-                    const isInFaceArea = 
-                        pixelX >= faceArea.x && 
-                        pixelX <= faceArea.x + faceArea.width && 
-                        pixelY >= faceArea.y && 
-                        pixelY <= faceArea.y + faceArea.height;
-                    
-                    if (!isInFaceArea) {
+                    // Ignorar pixels próximos ao rosto
+                    if (!(pixelX >= faceArea.x && pixelX <= faceArea.x + faceArea.width &&
+                        pixelY >= faceArea.y && pixelY <= faceArea.y + faceArea.height)) {
+                        
                         totalPixels++;
-                        if (data[i] > whiteThreshold &&     // R
-                            data[i+1] > whiteThreshold &&   // G
-                            data[i+2] > whiteThreshold) {   // B
+                        if (isWhitePixel(data[i], data[i+1], data[i+2])) {
                             whitePixels++;
                         }
                     }
@@ -1485,12 +1486,15 @@ function calculateRegionBrightness(imageData) {
 
             const whitePercentage = totalPixels > 0 ? (whitePixels / totalPixels) * 100 : 0;
             
-            // Considerar como fundo branco se pelo menos 70% das bordas forem brancas
             return {
-                isWhite: whitePercentage >= 3,
-                whitePercentage: whitePercentage
+                isWhite: whitePercentage >= MIN_WHITE_PERCENTAGE,
+                whitePercentage: whitePercentage,
+                details: {
+                    thresholdUsed: WHITE_THRESHOLD,
+                    analyzedPixels: totalPixels,
+                    whitePixels: whitePixels
+                }
             };
-
         }
 
         // Função auxiliar para obter pixels do fundo
