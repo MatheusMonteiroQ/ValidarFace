@@ -185,7 +185,36 @@ body {
     position: relative;
     display: inline-block;
 }
-
+    /* Estilo para a câmera redonda */
+    .round-camera {
+        width: 300px; /* Tamanho reduzido */
+        height: 300px;
+        border-radius: 50%; /* Forma redonda */
+        overflow: hidden; /* Esconde o que sai do círculo */
+        margin: 0 auto; /* Centraliza */
+        position: relative;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra suave */
+        border: none !important; /* Remove qualquer borda */
+    }
+    
+    .round-camera video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* Garante que o vídeo preencha o círculo */
+    }
+    
+    /* Remove as linhas de guia se não forem mais necessárias */
+    .round-camera .face-guidelines {
+        display: none;
+    }
+    
+    /* Ajuste para o container principal */
+    .card-body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    
 .original-bg {
     position: absolute;
     top: 0;
