@@ -1487,7 +1487,7 @@ function calculateRegionBrightness(imageData) {
             
             // Considerar como fundo branco se pelo menos 70% das bordas forem brancas
             return {
-                isWhite: whitePercentage >= 70,
+                isWhite: whitePercentage >= 25,
                 whitePercentage: whitePercentage
             };
 
