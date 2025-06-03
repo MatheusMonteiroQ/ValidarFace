@@ -103,6 +103,9 @@
             const motionWarning = document.getElementById('motionWarning');
             const mensagemMovimentoContainer = document.getElementById('mensagemMovimentoContainer');
             const cameraContainer = document.getElementById('cameraContainer');
+            const validationResultss = document.getElementById('validationResults');
+            const previewImg = document.getElementById('previewImg');
+            const detailsDiv = document.getElementById('technicalDetails');
             let selfieSegmentation;
             
             let mediaStream = null;
@@ -630,7 +633,6 @@
                     
                     // Usar Azure em vez da validação local
                     const validation = await validateWithAzure(blob);
-                    const validationResultss = document.getElementById('validationResults');
                     validationResultss.style.display = 'block';
                     // Exibir resultados
                     displayAzureResults(validation);
@@ -674,14 +676,13 @@
 
             // 10. Evento de tentar novamente
             retryBtn.addEventListener('click', () => {
-                resultsDiv.innerHTML = '';
                 retryBtn.style.display = 'none';
                 submitBtn.style.display = 'none';
                 validacaoBtn.disabled = false;
                 validacaoBtn.style.display = 'block';
+                previewImg.style.display = 'none';
                 captureBtn.style.display = 'none';
                 cameraContainer.style.display = 'block';
-                const validationResultss = document.getElementById('validationResults');
                 validationResultss.style.display = 'none';
                 canvas.style.display = 'none';
                 video.style.display = 'block';
@@ -696,11 +697,10 @@
             
         // Exibir resultados do Azure
         function displayAzureResults(validation) {
-            const validationDiv = document.getElementById('validationResults');
-            validationDiv.innerHTML = '';
+            validationResultss.innerHTML = '';
             
             if (!validation.isValid) {
-                validationDiv.innerHTML = `
+                validationResultss.innerHTML = `
                     <div class="azure-header invalid">
                         ❌ Validação ICAO Falhou
                     </div>
@@ -720,12 +720,9 @@
                     </div>
                 `;
                 
-                document.getElementById('showDetails').addEventListener('click', () => {
-                    const detailsDiv = document.getElementById('technicalDetails');
-                    detailsDiv.style.display = detailsDiv.style.display === 'none' ? 'block' : 'none';
-                });
+
             } else {
-                validationDiv.innerHTML = `
+                validationResultss.innerHTML = `
                     <div class="azure-header valid">
                         ✅ Foto Aprovada para Documentos
                     </div>
@@ -793,7 +790,7 @@
                 // Processamento adicional para melhorar a foto
                 const imageData = enhanceImage(ctx);
                 ctx.putImageData(imageData, 0, 0);
-
+                
                 // Converter para Blob com qualidade
                 canvas.toBlob((blob) => {
                     resolve({
@@ -1202,7 +1199,7 @@ function calculateRegionBrightness(imageData) {
 
  
                 const previewUrl = URL.createObjectURL(blob);
-                const previewImg = document.getElementById('previewImg');
+            
                 previewImg.src = previewUrl;
                 previewImg.style.display = 'block';
             
@@ -1431,46 +1428,69 @@ function calculateRegionBrightness(imageData) {
             canvas.height = img.height;
             ctx.drawImage(img, 0, 0);
             
-            // Definir margem ao redor do rosto para análise
-            const margin = 20;
-            
-            // Área a ser analisada (toda a imagem exceto a área do rosto com margem)
-            const backgroundArea = {
-                x: 0,
-                y: 0,
-                width: canvas.width,
-                height: canvas.height,
-                exclude: {
-                    x: Math.max(0, faceRectangle.left - margin),
-                    y: Math.max(0, faceRectangle.top - margin),
-                    width: Math.min(canvas.width, faceRectangle.width + margin * 2),
-                    height: Math.min(canvas.height, faceRectangle.height + margin * 2)
-                }
+            const faceMargin = 30;
+    
+            // Área a ser ignorada (rosto + margem de segurança)
+            const faceArea = {
+                x: Math.max(0, faceRectangle.left - faceMargin),
+                y: Math.max(0, faceRectangle.top - faceMargin),
+                width: Math.min(canvas.width, faceRectangle.width + faceMargin * 2),
+                height: Math.min(canvas.height, faceRectangle.height + faceMargin * 2)
             };
             
-            // Analisar pixels do fundo
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const backgroundPixels = getBackgroundPixels(imageData, backgroundArea);
+            // Analisar apenas as bordas da imagem (ignorando área central)
+            const borderWidth = 50; // Largura da borda a ser analisada
             
-            // Calcular porcentagem de pixels brancos
-            const whiteThreshold = 230; // Valor RGB mínimo para considerar como "branco" (0-255)
+            const analysisAreas = [
+                // Top border
+                { x: 0, y: 0, width: canvas.width, height: borderWidth },
+                // Bottom border
+                { x: 0, y: canvas.height - borderWidth, width: canvas.width, height: borderWidth },
+                // Left border (excluindo áreas já cobertas por top/bottom)
+                { x: 0, y: borderWidth, width: borderWidth, height: canvas.height - borderWidth * 2 },
+                // Right border (excluindo áreas já cobertas por top/bottom)
+                { x: canvas.width - borderWidth, y: borderWidth, width: borderWidth, height: canvas.height - borderWidth * 2 }
+            ];
+            
+            let totalPixels = 0;
             let whitePixels = 0;
+            let whiteThreshold = 230;
             
-            for (let i = 0; i < backgroundPixels.length; i += 4) {
-                if (backgroundPixels[i] > whiteThreshold &&     // R
-                    backgroundPixels[i+1] > whiteThreshold &&   // G
-                    backgroundPixels[i+2] > whiteThreshold) {   // B
-                    whitePixels++;
+            // Analisar cada área de borda
+            for (const area of analysisAreas) {
+                const imageData = ctx.getImageData(area.x, area.y, area.width, area.height);
+                const data = imageData.data;
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    // Verificar se o pixel está dentro da área do rosto (para ignorar)
+                    const pixelX = area.x + ((i/4) % area.width);
+                    const pixelY = area.y + Math.floor((i/4) / area.width);
+                    
+                    const isInFaceArea = 
+                        pixelX >= faceArea.x && 
+                        pixelX <= faceArea.x + faceArea.width && 
+                        pixelY >= faceArea.y && 
+                        pixelY <= faceArea.y + faceArea.height;
+                    
+                    if (!isInFaceArea) {
+                        totalPixels++;
+                        if (data[i] > whiteThreshold &&     // R
+                            data[i+1] > whiteThreshold &&   // G
+                            data[i+2] > whiteThreshold) {   // B
+                            whitePixels++;
+                        }
+                    }
                 }
             }
+
+            const whitePercentage = totalPixels > 0 ? (whitePixels / totalPixels) * 100 : 0;
             
-            const whitePercentage = (whitePixels / (backgroundPixels.length / 4)) * 100;
-            
-            // Considerar como fundo branco se pelo menos 85% dos pixels forem brancos
+            // Considerar como fundo branco se pelo menos 70% das bordas forem brancas
             return {
-                isWhite: whitePercentage >= 85,
+                isWhite: whitePercentage >= 70,
                 whitePercentage: whitePercentage
             };
+
         }
 
         // Função auxiliar para obter pixels do fundo
