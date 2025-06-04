@@ -661,12 +661,14 @@
                 try {
                     // 1. Primeiro valida o movimento da cabeça
                     // 1. Primeiro valida o movimento de distância
+                    validacaoBtn.style.display = 'none';
                     await validateDistanceMovement(video);
                     // 2. Depois continua com a captura normal
                     clearInterval(motionCheckInterval);
+                    
                     captureBtn.disabled = false;
                     captureBtn.style.display = 'block';
-                    validacaoBtn.style.display = 'none';
+                    
                 } catch (error) {
                     console.error("Erro na validação de movimento:", error);
                     resultsDiv.innerHTML = `<p class="invalid">Erro na validação: ${error.message}</p>`;
@@ -1430,7 +1432,7 @@ function calculateRegionBrightness(imageData) {
 
             // Configurações ajustáveis
             const WHITE_THRESHOLD = 200;  // Reduzido de 230 para 200 (mais tolerante)
-            const MIN_WHITE_PERCENTAGE = 0;  // % mínima de pixels "brancos"
+            const MIN_WHITE_PERCENTAGE = 75;  // % mínima de pixels "brancos"
             const ANALYSIS_MARGIN = 30;  // Margem ao redor do rosto para ignorar
 
             // Área do rosto expandida (para ignorar)
